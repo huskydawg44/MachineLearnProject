@@ -1,0 +1,100 @@
+---
+title: "Machine Learning Project"
+author: "Ethan Bench"
+date: "December 13, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(caret)
+library(randomForest)
+library(MASS)
+library(klaR)
+```
+
+## Summary
+
+This report shows how I came to the conclusion that a Random Forrest model works very well for the Weight Lifting Exercise Data set as found at http://groupware.les.inf.puc-rio.br/har .  I found that a Random Forrest model using 52 variables  of data predicts new outcomes with an estimated out of sample error rate of 99.5% accuracy.
+
+### Perform model selection
+
+When considering models to choose, I considered the following models:  Simple Linear analysis, Linear Descriminant Analysis, Naive Bayes, and Random Forrests.  Out of hand, I had to reject Simple Linear analysis since our outcome variable is a factor variable and a Linear analysis will return not categorical predictions.  Naive Bayes probably won't return a good result since it assumes independence of predictor variables, but I gave it a shot just to see what it would do.  Linear Descriminant Analysis might have worked depending on how the data was shaped so I included it.  Random Forrests seemed like the best choice going in, given the complexity of the collected data.  Of course, with Random Forrests, there is a tendancy to overfit data so I performed cross validation on the models.  I chose k folds cross validation due to processing power on my computer, and it's unbiased estimate of out of sample error rate.  I chose k=10 since higher values of k increase accuracy and with 19,622 total observations (15,698 in my training set), the test segments would still be sufficiently large (greater than 1500).
+
+So below is my code for loading the data set, removing the columns of data I wasn't interested in, splitting the data into test and training sets and building the Random Forrest model.
+
+The justification for the columns of data I chose to keep were any data column that met 2 criteria.  1) Data was available for each record.  There were a large number of columns for which the data was missing or NA for every record that didn't have a new window value of Yes.
+2) Data was not trivial.  The time stamps, user name, and new window columns were uncorrelated to the data, and the num window column was perfectly correlated to the data (most likely due to collection technique).
+
+### Model building
+
+```{r cache=TRUE}
+# Read the data
+HARdata<-read.csv("data/PML-Training.csv")
+
+# Remove columns that have NA's in them or are otherwise irrelevant.
+# Notably columns that only have data when New window = Yes.  This still leaves
+# 52 variables worth of data, plus the classe indicator.
+HARdata_less<-HARdata[,c(8:11,37:49,60:68,84:86,102,113:124,140,151:160)]
+
+#Define testing and training data sets so we can predict out of sample error rate later.
+inTrain<-createDataPartition(y=HARdata_less$classe,p=0.8,list=FALSE)
+training<-HARdata_less[inTrain,]
+testing<-HARdata_less[-inTrain,]
+
+# define training control to k=10 cross fold validation
+train_control <- trainControl(method="cv", number=10)
+
+# build a Random Forrest model using K=10 cross fold validation.
+# Set seed for re-produceability
+set.seed(12345)
+RFmod<-train(classe~.,data=training,trControl=train_control,method="rf")
+
+# Show results of model
+RFmod$results
+```
+
+The predicted out of sample error rates are in excess of 99%.  This is a good sign.  Next, I built an LDA model.
+
+```{r cache=TRUE}
+# build a Linear Discriminate Analysis model using k=10 cross fold validation.
+LDAmod<-train(classe~.,data=training,method="lda",trControl=train_control)
+
+# Show results of model
+LDAmod$results
+```
+
+The predicted out of sample error rate for the LDA model is reasonable but not good at around 70%.  Next I build the Naive Bayes model.
+
+```{r cache=TRUE, warning = FALSE}
+# build a Naive Bayes model using k=10 cross fold validation.
+NBmod<-train(classe~.,data=training,method="nb",trControl=train_control)
+```
+```{r}
+# Show results of model
+NBmod$results
+```
+
+Again, the predicted out of sample error rate for Naive Bayes is reasonable but not good at around 74%.  Therefore, I observe that the Random Forrest model has the highest accuracy by far so I select it.  Now I perform our actual out of sample error rate calculation using the testing data set.
+
+```{r}
+# Estimate Out of Sample error rate
+testingPred<-predict(RFmod,testing)
+confusionMatrix(testingPred,testing$classe)$overall
+```
+
+I find that the calculation is very similar to the estimated out of sample error rate at 99.5%.
+
+### Final Model selection
+
+Therefore, I use the Random Forrest model I created to predict on the actual test data.
+
+```{r}
+# Predict values on Test data using the Random Forrest model.
+HARtest<-read.csv("data/PML-Testing.csv")
+HARtest_less<-HARtest[,c(8:11,37:49,60:68,84:86,102,113:124,140,151:160)]
+HARpred<-predict(RFmod,HARtest_less)
+# I've commeneted the results out to not post the quiz answers online.
+#HARpred
+
+```
